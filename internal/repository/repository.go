@@ -63,6 +63,7 @@ type Options struct {
 	Compression   CompressionMode
 	PackSize      uint
 	NoExtraVerify bool
+	TmpDir        string
 }
 
 // CompressionMode configures if data should be compressed.
@@ -555,8 +556,8 @@ func (r *Repository) StartPackUploader(ctx context.Context, wg *errgroup.Group) 
 	innerWg, ctx := errgroup.WithContext(ctx)
 	r.packerWg = innerWg
 	r.uploader = newPackerUploader(ctx, innerWg, r, r.Connections())
-	r.treePM = newPackerManager(r.key, restic.TreeBlob, r.packSize(), r.packerCount, r.uploader.QueuePacker)
-	r.dataPM = newPackerManager(r.key, restic.DataBlob, r.packSize(), r.packerCount, r.uploader.QueuePacker)
+	r.treePM = newPackerManager(r.key, r.opts.TmpDir, restic.TreeBlob, r.packSize(), r.packerCount, r.uploader.QueuePacker)
+	r.dataPM = newPackerManager(r.key, r.opts.TmpDir, restic.DataBlob, r.packSize(), r.packerCount, r.uploader.QueuePacker)
 
 	wg.Go(func() error {
 		return innerWg.Wait()
@@ -1110,7 +1111,7 @@ type packBlobValue struct {
 var errPackEOF = errors.New("reached EOF of pack file")
 
 func newPackBlobIterator(packID restic.ID, rd discardReader, currentOffset uint,
-	blobs []restic.Blob, key *crypto.Key, dec *zstd.Decoder) *packBlobIterator {
+		blobs []restic.Blob, key *crypto.Key, dec *zstd.Decoder) *packBlobIterator {
 	return &packBlobIterator{
 		packID:        packID,
 		rd:            rd,

@@ -103,6 +103,7 @@ type BackupOptions struct {
 	ReadConcurrency   uint
 	NoScan            bool
 	SkipIfUnchanged   bool
+	TmpDir            string
 }
 
 func (opts *BackupOptions) AddFlags(f *pflag.FlagSet) {
@@ -143,6 +144,7 @@ func (opts *BackupOptions) AddFlags(f *pflag.FlagSet) {
 		f.BoolVar(&opts.ExcludeCloudFiles, "exclude-cloud-files", false, "excludes online-only cloud files (such as OneDrive Files On-Demand)")
 	}
 	f.BoolVar(&opts.SkipIfUnchanged, "skip-if-unchanged", false, "skip snapshot creation if identical to parent snapshot")
+	f.StringVar(&opts.TmpDir, "temp-dir", "", "set the directory to use for temporary files (default is system dependent")
 
 	// parse read concurrency from env, on error the default value will be used
 	readConcurrency, _ := strconv.ParseUint(os.Getenv("RESTIC_READ_CONCURRENCY"), 10, 32)
@@ -531,6 +533,28 @@ func runBackup(ctx context.Context, opts BackupOptions, gopts GlobalOptions, ter
 	if err != nil {
 		return err
 	}
+
+	// set up temp directory either from args or using a system temp dir.
+	tmpDir := opts.TmpDir
+	if len(tmpDir) > 0 {
+		// temp dir was set explicitly by user so don't clean up as it's shared.
+	} else {
+		tmpDir, err = os.MkdirTemp("", "restic")
+		if err != nil {
+			return err
+		}
+		// this should be replaced by runtime.addCleanup in Go 1.24.
+		defer os.RemoveAll(tmpDir)
+	}
+
+	// also exclude the temporary directory from backups.
+	rejectByNameFuncs = append(rejectByNameFuncs, func(path string) bool {
+		if fs.HasPathPrefix(tmpDir, path) {
+			debug.Log("rejecting restic tmp directory %v", path)
+			return true
+		}
+		return false
+	})
 
 	var parentSnapshot *restic.Snapshot
 	if !opts.Stdin {
