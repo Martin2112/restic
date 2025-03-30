@@ -354,6 +354,15 @@ var backupExcludeFilenames = []string{
 	"work/source/test.c",
 }
 
+var tmpExcludeFilenames = []string{
+	"testfile1",
+	"foo.tar.gz",
+	"private/secret/passwords.txt",
+	"work/source/test.c",
+	"tmp/tmpfile.txt",
+	"tmp/subdir/ephemeral.txt",
+}
+
 func TestBackupExclude(t *testing.T) {
 	env, cleanup := withTestEnvironment(t)
 	defer cleanup()
@@ -393,6 +402,50 @@ func TestBackupExclude(t *testing.T) {
 		"expected file %q not in first snapshot, but it's included", "foo.tar.gz")
 	rtest.Assert(t, !includes(files, "/testdata/private/secret/passwords.txt"),
 		"expected file %q not in first snapshot, but it's included", "passwords.txt")
+}
+
+func TestBackupTmpExclude(t *testing.T) {
+	env, cleanup := withTestEnvironment(t)
+	defer cleanup()
+
+	testRunInit(t, env.gopts)
+
+	datadir := filepath.Join(env.base, "testdata")
+
+	for _, filename := range tmpExcludeFilenames {
+		fp := filepath.Join(datadir, filename)
+		rtest.OK(t, os.MkdirAll(filepath.Dir(fp), 0755))
+		rtest.OK(t, os.WriteFile(fp, []byte(filename), 0o666))
+	}
+
+	snapshots := make(map[string]struct{})
+
+	opts := BackupOptions{}
+	t.Setenv("TMP", filepath.Join(datadir, "TMP"))
+
+	testRunBackup(t, filepath.Dir(env.testdata), []string{"testdata"}, opts, env.gopts)
+	snapshots, snapshotID := lastSnapshot(snapshots, loadSnapshotMap(t, env.gopts))
+	files := testRunLs(t, env.gopts, snapshotID)
+	rtest.Assert(t, includes(files, "/testdata/foo.tar.gz"),
+		"expected file %q in first snapshot, but it's not included", "foo.tar.gz")
+	rtest.Assert(t, includes(files, "/testdata/tmp/tmpfile.txt"),
+		"expected file %q in first snapshot, but it's not included", "tmpfile.txt")
+	rtest.Assert(t, includes(files, "/testdata/tmp/subdir/ephemeral.txt"),
+		"expected file %q in first snapshot, but it's not included", "ephemeral.txt")
+
+	opts.ExcludeTmpDir = true
+
+	testRunBackup(t, filepath.Dir(env.testdata), []string{"testdata"}, opts, env.gopts)
+	_, snapshotID = lastSnapshot(snapshots, loadSnapshotMap(t, env.gopts))
+	files = testRunLs(t, env.gopts, snapshotID)
+	rtest.Assert(t, !includes(files, "/testdata/foo.tar.gz"),
+		"expected file %q not in first snapshot, but it's included", "foo.tar.gz")
+	rtest.Assert(t, !includes(files, "/testdata/private/secret/passwords.txt"),
+		"expected file %q not in first snapshot, but it's included", "passwords.txt")
+	rtest.Assert(t, !includes(files, "/testdata/tmp/tmpfile.txt"),
+		"expected file %q not in first snapshot, but it's included", "tmpfile.txt")
+	rtest.Assert(t, !includes(files, "/testdata/tmp/subdir/ephemeral.txt"),
+		"expected file %q not in first snapshot, but it's included", "ephemeral.txt")
 }
 
 func TestBackupErrors(t *testing.T) {

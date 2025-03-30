@@ -103,6 +103,7 @@ type BackupOptions struct {
 	ReadConcurrency   uint
 	NoScan            bool
 	SkipIfUnchanged   bool
+	ExcludeTmpDir     bool
 }
 
 func (opts *BackupOptions) AddFlags(f *pflag.FlagSet) {
@@ -116,6 +117,7 @@ func (opts *BackupOptions) AddFlags(f *pflag.FlagSet) {
 	f.BoolVarP(&opts.ExcludeOtherFS, "one-file-system", "x", false, "exclude other file systems, don't cross filesystem boundaries and subvolumes")
 	f.StringArrayVar(&opts.ExcludeIfPresent, "exclude-if-present", nil, "takes `filename[:header]`, exclude contents of directories containing filename (except filename itself) if header of that file is as provided (can be specified multiple times)")
 	f.BoolVar(&opts.ExcludeCaches, "exclude-caches", false, `excludes cache directories that are marked with a CACHEDIR.TAG file. See https://bford.info/cachedir/ for the Cache Directory Tagging Standard`)
+	f.BoolVar(&opts.ExcludeTmpDir, "exclude-tmp-dir", runtime.GOOS == "windows", `excludes temp directory from backups`)
 	f.StringVar(&opts.ExcludeLargerThan, "exclude-larger-than", "", "max `size` of the files to be backed up (allowed suffixes: k/K, m/M, g/G, t/T)")
 	f.BoolVar(&opts.Stdin, "stdin", false, "read backup from stdin")
 	f.StringVar(&opts.StdinFilename, "stdin-filename", "stdin", "`filename` to use when reading from stdin")
@@ -306,7 +308,7 @@ func (opts BackupOptions) Check(gopts GlobalOptions, args []string) error {
 
 // collectRejectByNameFuncs returns a list of all functions which may reject data
 // from being saved in a snapshot based on path only
-func collectRejectByNameFuncs(opts BackupOptions, repo *repository.Repository) (fs []archiver.RejectByNameFunc, err error) {
+func collectRejectByNameFuncs(opts BackupOptions, repo *repository.Repository) (funcs []archiver.RejectByNameFunc, err error) {
 	// exclude restic cache
 	if repo.Cache() != nil {
 		f, err := rejectResticCache(repo)
@@ -314,18 +316,28 @@ func collectRejectByNameFuncs(opts BackupOptions, repo *repository.Repository) (
 			return nil, err
 		}
 
-		fs = append(fs, f)
+		funcs = append(funcs, f)
 	}
+
+	// exclude temp directory, helps on Windows because temp files can't be unlinked on creation.
+	// may be useful on other OSes as it's a shared location containing volatile data.
+	funcs = append(funcs, func(path string) bool {
+		if fs.HasPathPrefix(os.TempDir(), path) {
+			debug.Log("rejecting restic tmp directory %v", path)
+			return true
+		}
+		return false
+	})
 
 	fsPatterns, err := opts.ExcludePatternOptions.CollectPatterns(Warnf)
 	if err != nil {
 		return nil, err
 	}
 	for _, pat := range fsPatterns {
-		fs = append(fs, archiver.RejectByNameFunc(pat))
+		funcs = append(funcs, archiver.RejectByNameFunc(pat))
 	}
 
-	return fs, nil
+	return funcs, nil
 }
 
 // collectRejectFuncs returns a list of all functions which may reject data
