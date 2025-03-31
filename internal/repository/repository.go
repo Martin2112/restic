@@ -1111,7 +1111,7 @@ type packBlobValue struct {
 var errPackEOF = errors.New("reached EOF of pack file")
 
 func newPackBlobIterator(packID restic.ID, rd discardReader, currentOffset uint,
-		blobs []restic.Blob, key *crypto.Key, dec *zstd.Decoder) *packBlobIterator {
+	blobs []restic.Blob, key *crypto.Key, dec *zstd.Decoder) *packBlobIterator {
 	return &packBlobIterator{
 		packID:        packID,
 		rd:            rd,
