@@ -532,6 +532,7 @@ func runBackup(ctx context.Context, opts BackupOptions, gopts GlobalOptions, ter
 		return err
 	}
 
+	// Use a new subdirectory for temp files (fixes issue #1380 on Windows).
 	tmpDir, err := os.MkdirTemp("", "restic")
 	if err != nil {
 		return err
@@ -540,14 +541,14 @@ func runBackup(ctx context.Context, opts BackupOptions, gopts GlobalOptions, ter
 	defer func(path string) {
 		err := os.RemoveAll(path)
 		if err != nil {
-			debug.Log("Failed to remove temporary directory: %v\n", err)
+			debug.Log("Failed to remove restic tmp directory: %v\n", err)
 		}
 	}(tmpDir)
 
-	// also exclude the temporary directory from backups.
+	// Exclude the new temporary directory from backups.
 	rejectByNameFuncs = append(rejectByNameFuncs, func(path string) bool {
 		if fs.HasPathPrefix(tmpDir, path) {
-			debug.Log("rejecting restic tmp directory %v", path)
+			debug.Log("rejecting file in restic tmp directory %v", path)
 			return true
 		}
 		return false
