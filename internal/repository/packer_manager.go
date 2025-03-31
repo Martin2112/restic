@@ -203,7 +203,7 @@ func (r *packerManager) forgetPacker(packer *packer) {
 // created or one is returned that already has some blobs.
 func (r *packerManager) newPacker() (pck *packer, err error) {
 	debug.Log("create new pack")
-	tmpfile, err := fs.TempFile("", "restic-temp-pack-")
+	tmpfile, err := fs.TempFile(r.tmpDir, "restic-temp-pack-")
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
